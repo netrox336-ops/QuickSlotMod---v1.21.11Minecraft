@@ -1,7 +1,7 @@
 package dev.netrox.quickslot;
 
 public enum Profile {
-    NORMAL("Normal"),
+    NORMAL("Обычный"),
     RUSH("Rush"),
     BRIDGE("Bridge");
 

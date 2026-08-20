@@ -22,6 +22,8 @@ public final class QuickSlotConfig {
     private int hudY = 6;
     private float hudScale = 1.0F;
     private Profile profile = Profile.NORMAL;
+    private RefillMode refillMode = RefillMode.EMPTY_ONLY;
+    private int refillThreshold = 16;
 
     private QuickSlotConfig() {
         resetDefaults();
@@ -54,11 +56,18 @@ public final class QuickSlotConfig {
             hudX = parseInt(properties.getProperty("hudX"), 6);
             hudY = parseInt(properties.getProperty("hudY"), 6);
             hudScale = clamp(parseFloat(properties.getProperty("hudScale"), 1.0F), 0.5F, 3.0F);
+            refillThreshold = clamp(parseInt(properties.getProperty("refillThreshold"), 16), 1, 64);
 
             try {
                 profile = Profile.valueOf(properties.getProperty("profile", Profile.NORMAL.name()));
             } catch (IllegalArgumentException ignored) {
                 profile = Profile.NORMAL;
+            }
+
+            try {
+                refillMode = RefillMode.valueOf(properties.getProperty("refillMode", RefillMode.EMPTY_ONLY.name()));
+            } catch (IllegalArgumentException ignored) {
+                refillMode = RefillMode.EMPTY_ONLY;
             }
 
             for (Profile p : Profile.values()) {
@@ -85,6 +94,8 @@ public final class QuickSlotConfig {
         properties.setProperty("hudY", Integer.toString(hudY));
         properties.setProperty("hudScale", Float.toString(hudScale));
         properties.setProperty("profile", profile.name());
+        properties.setProperty("refillMode", refillMode.name());
+        properties.setProperty("refillThreshold", Integer.toString(refillThreshold));
 
         for (Profile p : Profile.values()) {
             ItemRule[] profileRules = rules.get(p);
@@ -97,7 +108,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.1.0");
+                properties.store(output, "QuickSlot 1.2.0");
             }
         } catch (IOException ignored) {
         }
@@ -125,6 +136,10 @@ public final class QuickSlotConfig {
         }
     }
 
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -142,7 +157,12 @@ public final class QuickSlotConfig {
     public void setHudScale(float scale) { hudScale = clamp(scale, 0.5F, 3.0F); }
     public void resetHud() { hudX = 6; hudY = 6; hudScale = 1.0F; save(); }
     public Profile profile() { return profile; }
+    public void setProfile(Profile profile) { this.profile = profile; save(); }
     public void nextProfile() { profile = profile.next(); save(); }
+    public RefillMode refillMode() { return refillMode; }
+    public void nextRefillMode() { refillMode = refillMode.next(); save(); }
+    public int refillThreshold() { return refillThreshold; }
+    public void setRefillThreshold(int threshold) { refillThreshold = clamp(threshold, 1, 64); save(); }
     public ItemRule rule(int slot) { return rules.get(profile)[slot]; }
     public void cycleRule(int slot) { rules.get(profile)[slot] = rule(slot).next(); save(); }
 }

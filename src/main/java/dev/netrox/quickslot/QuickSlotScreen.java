@@ -45,16 +45,18 @@ public final class QuickSlotScreen extends Screen {
 
         addRenderableWidget(Button.builder(
             Component.literal("Профиль: " + config.profile().displayName()),
-            button -> {
-                config.nextProfile();
-                minecraft.setScreen(new QuickSlotScreen(parent));
-            }
-        ).bounds(center - 154, top + 28, 150, 20).build());
+            button -> minecraft.setScreen(new ProfileScreen(parent))
+        ).bounds(center - 154, top + 28, 98, 20).build());
+
+        addRenderableWidget(Button.builder(
+            Component.literal("Auto Refill"),
+            button -> minecraft.setScreen(new RefillSettingsScreen(parent))
+        ).bounds(center - 50, top + 28, 100, 20).build());
 
         addRenderableWidget(Button.builder(
             Component.literal("Настроить HUD"),
             button -> minecraft.setScreen(new HudEditorScreen(this))
-        ).bounds(center + 4, top + 28, 150, 20).build());
+        ).bounds(center + 56, top + 28, 98, 20).build());
 
         int gridTop = top + 62;
         for (int slot = 0; slot < 9; slot++) {
