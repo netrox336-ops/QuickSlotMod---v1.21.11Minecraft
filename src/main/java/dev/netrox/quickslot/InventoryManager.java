@@ -7,6 +7,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public final class InventoryManager {
+    private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
+
     private InventoryManager() {}
 
     public static void tick(Minecraft minecraft) {
@@ -16,6 +18,7 @@ public final class InventoryManager {
         if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar()) return;
 
         Inventory inventory = minecraft.player.getInventory();
+        rememberPreferredStacks(inventory, config);
 
         if (config.removeResourcesFromHotbar()) {
             for (int hotbar = 0; hotbar < 9; hotbar++) {
@@ -43,50 +46,107 @@ public final class InventoryManager {
                 continue;
             }
 
-            int currentPriority = rule.matches(current) ? rule.priority(current) : -1;
-            int source = findBestMatchingMainSlot(inventory, rule, currentPriority);
-            if (source >= 0) {
-                swap(minecraft, source, target);
-                return;
+            if (rule.matches(current)) {
+                if (isUpgradeable(rule)) {
+                    int currentPriority = rule.priority(current);
+                    Source source = findBestSource(inventory, config, rule, target, currentPriority);
+                    if (source != null) {
+                        swap(minecraft, source.containerSlot(), target);
+                        return;
+                    }
+                } else if (shouldRefill(current, config)) {
+                    int mergeSource = findMergeSource(inventory, current);
+                    if (mergeSource >= 0) {
+                        mergeIntoHotbar(minecraft, mergeSource, target);
+                        return;
+                    }
+                }
+                continue;
             }
 
-            source = findBestMatchingHotbarSlot(inventory, config, rule, target, currentPriority);
-            if (source >= 0) {
-                swap(minecraft, 36 + source, target);
+            Source source = findBestSource(inventory, config, rule, target, -1);
+            if (source != null) {
+                swap(minecraft, source.containerSlot(), target);
                 return;
             }
         }
     }
 
-    private static int findBestMatchingMainSlot(Inventory inventory, ItemRule rule, int currentPriority) {
-        int bestSlot = -1;
+    private static void rememberPreferredStacks(Inventory inventory, QuickSlotConfig config) {
+        for (int slot = 0; slot < 9; slot++) {
+            ItemRule rule = config.rule(slot);
+            ItemStack current = inventory.getItem(slot);
+            if (!rule.matches(current)) continue;
+
+            ItemStack remembered = current.copy();
+            remembered.setCount(1);
+            LAST_PREFERRED_STACKS[slot] = remembered;
+        }
+    }
+
+    private static boolean shouldRefill(ItemStack current, QuickSlotConfig config) {
+        if (current.isEmpty() || !current.isStackable() || current.getCount() >= current.getMaxStackSize()) return false;
+        return switch (config.refillMode()) {
+            case EMPTY_ONLY -> false;
+            case BELOW_THRESHOLD -> current.getCount() < Math.min(config.refillThreshold(), current.getMaxStackSize());
+            case ALWAYS_MAX -> true;
+        };
+    }
+
+    private static boolean isUpgradeable(ItemRule rule) {
+        return rule == ItemRule.SWORD || rule == ItemRule.PICKAXE || rule == ItemRule.AXE;
+    }
+
+    private static Source findBestSource(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority) {
+        Source best = null;
         int bestPriority = currentPriority;
+        ItemStack preferred = rule == ItemRule.BLOCKS ? LAST_PREFERRED_STACKS[target] : ItemStack.EMPTY;
+
         for (int slot = 9; slot <= 35; slot++) {
             ItemStack stack = inventory.getItem(slot);
-            int priority = rule.priority(stack);
+            int priority = adjustedPriority(rule, stack, preferred);
             if (priority > bestPriority) {
                 bestPriority = priority;
-                bestSlot = slot;
+                best = new Source(slot);
             }
         }
-        return bestSlot;
-    }
 
-    private static int findBestMatchingHotbarSlot(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority) {
-        int bestSlot = -1;
-        int bestPriority = currentPriority;
         for (int slot = 0; slot < 9; slot++) {
             if (slot == target) continue;
 
             ItemStack stack = inventory.getItem(slot);
-            int priority = rule.priority(stack);
+            int priority = adjustedPriority(rule, stack, preferred);
             if (priority <= bestPriority) continue;
 
             ItemRule sourceRule = config.rule(slot);
             if (sourceRule != ItemRule.FREE && sourceRule != ItemRule.EMPTY && sourceRule.matches(stack)) continue;
 
             bestPriority = priority;
-            bestSlot = slot;
+            best = new Source(36 + slot);
+        }
+
+        return best;
+    }
+
+    private static int adjustedPriority(ItemRule rule, ItemStack stack, ItemStack preferred) {
+        int priority = rule.priority(stack);
+        if (priority < 0) return priority;
+        if (rule == ItemRule.BLOCKS && !preferred.isEmpty() && ItemStack.isSameItemSameComponents(stack, preferred)) {
+            priority += 100_000;
+        }
+        return priority;
+    }
+
+    private static int findMergeSource(Inventory inventory, ItemStack target) {
+        int bestSlot = -1;
+        int bestCount = -1;
+        for (int slot = 9; slot <= 35; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || !ItemStack.isSameItemSameComponents(stack, target)) continue;
+            if (stack.getCount() > bestCount) {
+                bestCount = stack.getCount();
+                bestSlot = slot;
+            }
         }
         return bestSlot;
     }
@@ -96,7 +156,7 @@ public final class InventoryManager {
         for (int slot = 9; slot <= 35; slot++) {
             ItemStack target = inventory.getItem(slot);
             if (target.isEmpty()) return true;
-            if (target.getItem() == stack.getItem() && target.getCount() < target.getMaxStackSize()) return true;
+            if (ItemStack.isSameItemSameComponents(target, stack) && target.getCount() < target.getMaxStackSize()) return true;
         }
         return false;
     }
@@ -121,6 +181,14 @@ public final class InventoryManager {
         );
     }
 
+    private static void mergeIntoHotbar(Minecraft minecraft, int sourceSlot, int hotbarSlot) {
+        int containerId = minecraft.player.inventoryMenu.containerId;
+        int targetSlot = 36 + hotbarSlot;
+        minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
+        minecraft.gameMode.handleInventoryMouseClick(containerId, targetSlot, 0, ClickType.PICKUP, minecraft.player);
+        minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
+    }
+
     public static boolean isResource(ItemStack stack) {
         return stack.is(Items.IRON_INGOT) || stack.is(Items.GOLD_INGOT) || stack.is(Items.DIAMOND) || stack.is(Items.EMERALD);
     }
@@ -133,4 +201,6 @@ public final class InventoryManager {
         }
         return total;
     }
+
+    private record Source(int containerSlot) {}
 }
