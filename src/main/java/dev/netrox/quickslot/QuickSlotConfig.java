@@ -17,7 +17,9 @@ public final class QuickSlotConfig {
     private boolean loaded;
     private boolean autoSortEnabled = true;
     private boolean removeResourcesFromHotbar = true;
+    private boolean protectSelectedSlot = true;
     private boolean resourceHud = true;
+    private boolean statusHud = true;
     private int hudX = 6;
     private int hudY = 6;
     private float hudScale = 1.0F;
@@ -52,7 +54,9 @@ public final class QuickSlotConfig {
             String legacyEnabled = properties.getProperty("enabled", "true");
             autoSortEnabled = Boolean.parseBoolean(properties.getProperty("autoSortEnabled", legacyEnabled));
             removeResourcesFromHotbar = Boolean.parseBoolean(properties.getProperty("removeResourcesFromHotbar", "true"));
+            protectSelectedSlot = Boolean.parseBoolean(properties.getProperty("protectSelectedSlot", "true"));
             resourceHud = Boolean.parseBoolean(properties.getProperty("resourceHud", "true"));
+            statusHud = Boolean.parseBoolean(properties.getProperty("statusHud", "true"));
             hudX = parseInt(properties.getProperty("hudX"), 6);
             hudY = parseInt(properties.getProperty("hudY"), 6);
             hudScale = clamp(parseFloat(properties.getProperty("hudScale"), 1.0F), 0.5F, 3.0F);
@@ -89,7 +93,9 @@ public final class QuickSlotConfig {
         Properties properties = new Properties();
         properties.setProperty("autoSortEnabled", Boolean.toString(autoSortEnabled));
         properties.setProperty("removeResourcesFromHotbar", Boolean.toString(removeResourcesFromHotbar));
+        properties.setProperty("protectSelectedSlot", Boolean.toString(protectSelectedSlot));
         properties.setProperty("resourceHud", Boolean.toString(resourceHud));
+        properties.setProperty("statusHud", Boolean.toString(statusHud));
         properties.setProperty("hudX", Integer.toString(hudX));
         properties.setProperty("hudY", Integer.toString(hudY));
         properties.setProperty("hudScale", Float.toString(hudScale));
@@ -108,7 +114,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.2.0");
+                properties.store(output, "QuickSlot 1.3.0");
             }
         } catch (IOException ignored) {
         }
@@ -120,36 +126,27 @@ public final class QuickSlotConfig {
 
     private static int parseInt(String value, int fallback) {
         if (value == null) return fallback;
-        try {
-            return Integer.parseInt(value);
-        } catch (NumberFormatException ignored) {
-            return fallback;
-        }
+        try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { return fallback; }
     }
 
     private static float parseFloat(String value, float fallback) {
         if (value == null) return fallback;
-        try {
-            return Float.parseFloat(value);
-        } catch (NumberFormatException ignored) {
-            return fallback;
-        }
+        try { return Float.parseFloat(value); } catch (NumberFormatException ignored) { return fallback; }
     }
 
-    private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
+    private static int clamp(int value, int min, int max) { return Math.max(min, Math.min(max, value)); }
+    private static float clamp(float value, float min, float max) { return Math.max(min, Math.min(max, value)); }
 
     public boolean autoSortEnabled() { return autoSortEnabled; }
     public void toggleAutoSort() { autoSortEnabled = !autoSortEnabled; save(); }
     public boolean removeResourcesFromHotbar() { return removeResourcesFromHotbar; }
     public void toggleRemoveResourcesFromHotbar() { removeResourcesFromHotbar = !removeResourcesFromHotbar; save(); }
+    public boolean protectSelectedSlot() { return protectSelectedSlot; }
+    public void toggleProtectSelectedSlot() { protectSelectedSlot = !protectSelectedSlot; save(); }
     public boolean resourceHud() { return resourceHud; }
     public void toggleResourceHud() { resourceHud = !resourceHud; save(); }
+    public boolean statusHud() { return statusHud; }
+    public void toggleStatusHud() { statusHud = !statusHud; save(); }
     public int hudX() { return hudX; }
     public int hudY() { return hudY; }
     public float hudScale() { return hudScale; }

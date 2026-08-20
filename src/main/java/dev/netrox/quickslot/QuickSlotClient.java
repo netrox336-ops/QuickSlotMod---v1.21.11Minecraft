@@ -16,7 +16,7 @@ public final class QuickSlotClient {
         "key.quickslot.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, KeyMapping.Category.MISC
     );
     private static final KeyMapping NEXT_PROFILE = new KeyMapping(
-        "key.quickslot.next_profile", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_P, KeyMapping.Category.MISC
+        "key.quickslot.next_profile", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KeyMapping.Category.MISC
     );
     private static int tickCounter;
 
@@ -53,22 +53,17 @@ public final class QuickSlotClient {
 
     public static void addHudLayer(AddGuiOverlayLayersEvent event) {
         event.getLayeredDraw().add(
-            Identifier.fromNamespaceAndPath(QuickSlot.MODID, "resource_hud"),
-            QuickSlotClient::renderResourceHud
+            Identifier.fromNamespaceAndPath(QuickSlot.MODID, "quickslot_hud"),
+            QuickSlotClient::renderHud
         );
     }
 
-    private static void renderResourceHud(GuiGraphics graphics, DeltaTracker tracker) {
+    private static void renderHud(GuiGraphics graphics, DeltaTracker tracker) {
         Minecraft minecraft = Minecraft.getInstance();
         QuickSlotConfig config = QuickSlotConfig.get();
-        if (minecraft.player == null || minecraft.options.hideGui || !config.resourceHud()) return;
+        if (minecraft.player == null || minecraft.options.hideGui) return;
+        if (!config.resourceHud() && !config.statusHud()) return;
 
-        ResourceHudRenderer.render(
-            graphics,
-            minecraft.player.getInventory(),
-            config.hudX(),
-            config.hudY(),
-            config.hudScale()
-        );
+        ResourceHudRenderer.render(graphics, minecraft.player.getInventory(), config);
     }
 }

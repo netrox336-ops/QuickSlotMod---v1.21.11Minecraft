@@ -18,10 +18,12 @@ public final class InventoryManager {
         if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar()) return;
 
         Inventory inventory = minecraft.player.getInventory();
+        int protectedSlot = config.protectSelectedSlot() ? inventory.getSelectedSlot() : -1;
         rememberPreferredStacks(inventory, config);
 
         if (config.removeResourcesFromHotbar()) {
             for (int hotbar = 0; hotbar < 9; hotbar++) {
+                if (hotbar == protectedSlot) continue;
                 ItemStack stack = inventory.getItem(hotbar);
                 if (!isResource(stack) || !canMoveToMain(inventory, stack)) continue;
                 quickMove(minecraft, hotbar);
@@ -32,6 +34,8 @@ public final class InventoryManager {
         if (!config.autoSortEnabled()) return;
 
         for (int target = 0; target < 9; target++) {
+            if (target == protectedSlot) continue;
+
             ItemRule rule = config.rule(target);
             ItemStack current = inventory.getItem(target);
 
@@ -49,7 +53,7 @@ public final class InventoryManager {
             if (rule.matches(current)) {
                 if (isUpgradeable(rule)) {
                     int currentPriority = rule.priority(current);
-                    Source source = findBestSource(inventory, config, rule, target, currentPriority);
+                    Source source = findBestSource(inventory, config, rule, target, currentPriority, protectedSlot);
                     if (source != null) {
                         swap(minecraft, source.containerSlot(), target);
                         return;
@@ -64,7 +68,7 @@ public final class InventoryManager {
                 continue;
             }
 
-            Source source = findBestSource(inventory, config, rule, target, -1);
+            Source source = findBestSource(inventory, config, rule, target, -1, protectedSlot);
             if (source != null) {
                 swap(minecraft, source.containerSlot(), target);
                 return;
@@ -97,7 +101,7 @@ public final class InventoryManager {
         return rule == ItemRule.SWORD || rule == ItemRule.PICKAXE || rule == ItemRule.AXE;
     }
 
-    private static Source findBestSource(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority) {
+    private static Source findBestSource(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority, int protectedSlot) {
         Source best = null;
         int bestPriority = currentPriority;
         ItemStack preferred = rule == ItemRule.BLOCKS ? LAST_PREFERRED_STACKS[target] : ItemStack.EMPTY;
@@ -112,7 +116,7 @@ public final class InventoryManager {
         }
 
         for (int slot = 0; slot < 9; slot++) {
-            if (slot == target) continue;
+            if (slot == target || slot == protectedSlot) continue;
 
             ItemStack stack = inventory.getItem(slot);
             int priority = adjustedPriority(rule, stack, preferred);
