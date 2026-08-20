@@ -24,6 +24,10 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
+      - name: Узнать версию
+        id: version
+        run: echo "version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
       - name: Сборка
         run: gradle build --stacktrace
 
@@ -31,6 +35,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: quickslot-1.0.0-minecraft-1.21.11
+          name: quickslot-${{ steps.version.outputs.version }}-minecraft-1.21.11
           path: build/libs/*.jar
           if-no-files-found: error

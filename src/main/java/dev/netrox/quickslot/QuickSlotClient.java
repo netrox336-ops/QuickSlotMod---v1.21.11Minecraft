@@ -6,8 +6,6 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.item.Items;
 import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.event.TickEvent;
@@ -62,15 +60,15 @@ public final class QuickSlotClient {
 
     private static void renderResourceHud(GuiGraphics graphics, DeltaTracker tracker) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.options.hideGui || !QuickSlotConfig.get().resourceHud()) return;
+        QuickSlotConfig config = QuickSlotConfig.get();
+        if (minecraft.player == null || minecraft.options.hideGui || !config.resourceHud()) return;
 
-        Inventory inventory = minecraft.player.getInventory();
-        int x = 6;
-        int y = 6;
-        int line = minecraft.font.lineHeight + 2;
-        graphics.drawString(minecraft.font, "Iron: " + InventoryManager.count(inventory, Items.IRON_INGOT), x, y, 0xFFFFFF, true);
-        graphics.drawString(minecraft.font, "Gold: " + InventoryManager.count(inventory, Items.GOLD_INGOT), x, y + line, 0xFFFFFF, true);
-        graphics.drawString(minecraft.font, "Diamond: " + InventoryManager.count(inventory, Items.DIAMOND), x, y + line * 2, 0xFFFFFF, true);
-        graphics.drawString(minecraft.font, "Emerald: " + InventoryManager.count(inventory, Items.EMERALD), x, y + line * 3, 0xFFFFFF, true);
+        ResourceHudRenderer.render(
+            graphics,
+            minecraft.player.getInventory(),
+            config.hudX(),
+            config.hudY(),
+            config.hudScale()
+        );
     }
 }
