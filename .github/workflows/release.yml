@@ -1,12 +1,16 @@
-name: Публикация QuickSlot 1.0.0
+name: Публикация QuickSlot
 
 on:
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/release.yml'
+      - 'gradle.properties'
+      - 'RELEASE_NOTES_*.md'
   push:
     branches: [main]
+    paths:
+      - 'gradle.properties'
 
 permissions:
   contents: write
@@ -29,24 +33,34 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
+      - name: Узнать версию
+        id: version
+        run: echo "version=$(grep '^mod_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
       - name: Сборка
         run: gradle build --stacktrace
 
       - name: Проверка JAR
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          test -f build/libs/quickslot-1.0.0.jar
-          ls -lh build/libs/quickslot-1.0.0.jar
+          test -f "build/libs/quickslot-${VERSION}.jar"
+          test -f "RELEASE_NOTES_v${VERSION}.md"
+          ls -lh "build/libs/quickslot-${VERSION}.jar"
 
       - name: Создание GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if gh release view v1.0.0 >/dev/null 2>&1; then
-            gh release upload v1.0.0 build/libs/quickslot-1.0.0.jar --clobber
+          JAR="build/libs/quickslot-${VERSION}.jar"
+          NOTES="RELEASE_NOTES_v${VERSION}.md"
+          if gh release view "v${VERSION}" >/dev/null 2>&1; then
+            gh release upload "v${VERSION}" "$JAR" --clobber
           else
-            gh release create v1.0.0 build/libs/quickslot-1.0.0.jar \
+            gh release create "v${VERSION}" "$JAR" \
               --target "$GITHUB_SHA" \
-              --title "QuickSlot 1.0.0 — Minecraft 1.21.11" \
-              --notes "Первая версия QuickSlot для Minecraft Java 1.21.11 + Forge 61.2.0. Автоматическая раскладка хотбара, профили Normal/Rush/Bridge, перенос ресурсов из хотбара, HUD Iron/Gold/Diamond/Emerald и игровое меню настройки слотов."
+              --title "QuickSlot ${VERSION} — Minecraft 1.21.11" \
+              --notes-file "$NOTES"
           fi
