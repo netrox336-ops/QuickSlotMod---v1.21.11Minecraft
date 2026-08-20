@@ -17,7 +17,7 @@ public final class QuickSlotScreen extends Screen {
     protected void init() {
         QuickSlotConfig config = QuickSlotConfig.get();
         int center = width / 2;
-        int top = Math.max(32, height / 2 - 120);
+        int top = Math.max(28, height / 2 - 140);
 
         addRenderableWidget(Button.builder(
             Component.literal("Сортировка: " + state(config.autoSortEnabled())),
@@ -36,21 +36,27 @@ public final class QuickSlotScreen extends Screen {
         ).bounds(center - 50, top, 100, 20).build());
 
         addRenderableWidget(Button.builder(
-            Component.literal("HUD: " + state(config.resourceHud())),
+            Component.literal("Защита: " + state(config.protectSelectedSlot())),
             button -> {
-                config.toggleResourceHud();
-                button.setMessage(Component.literal("HUD: " + state(config.resourceHud())));
+                config.toggleProtectSelectedSlot();
+                button.setMessage(Component.literal("Защита: " + state(config.protectSelectedSlot())));
             }
         ).bounds(center + 56, top, 98, 20).build());
 
         addRenderableWidget(Button.builder(
-            Component.literal("Профиль: " + config.profile().displayName()),
-            button -> minecraft.setScreen(new ProfileScreen(parent))
+            Component.literal("HUD ресурсов: " + state(config.resourceHud())),
+            button -> {
+                config.toggleResourceHud();
+                button.setMessage(Component.literal("HUD ресурсов: " + state(config.resourceHud())));
+            }
         ).bounds(center - 154, top + 28, 98, 20).build());
 
         addRenderableWidget(Button.builder(
-            Component.literal("Auto Refill"),
-            button -> minecraft.setScreen(new RefillSettingsScreen(parent))
+            Component.literal("Статус: " + state(config.statusHud())),
+            button -> {
+                config.toggleStatusHud();
+                button.setMessage(Component.literal("Статус: " + state(config.statusHud())));
+            }
         ).bounds(center - 50, top + 28, 100, 20).build());
 
         addRenderableWidget(Button.builder(
@@ -58,7 +64,17 @@ public final class QuickSlotScreen extends Screen {
             button -> minecraft.setScreen(new HudEditorScreen(this))
         ).bounds(center + 56, top + 28, 98, 20).build());
 
-        int gridTop = top + 62;
+        addRenderableWidget(Button.builder(
+            Component.literal("Профиль: " + config.profile().displayName()),
+            button -> minecraft.setScreen(new ProfileScreen(this))
+        ).bounds(center - 154, top + 56, 150, 20).build());
+
+        addRenderableWidget(Button.builder(
+            Component.literal("Auto Refill: " + config.refillMode().displayName()),
+            button -> minecraft.setScreen(new RefillSettingsScreen(this))
+        ).bounds(center + 4, top + 56, 150, 20).build());
+
+        int gridTop = top + 90;
         for (int slot = 0; slot < 9; slot++) {
             int currentSlot = slot;
             int column = slot % 3;
@@ -87,8 +103,8 @@ public final class QuickSlotScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.drawCenteredString(font, title, width / 2, 10, 0xFFFFFF);
-        graphics.drawCenteredString(font, Component.literal("Нажмите на слот, чтобы сменить его правило"), width / 2, 22, 0xA0A0A0);
+        graphics.drawCenteredString(font, title, width / 2, 8, 0xFFFFFF);
+        graphics.drawCenteredString(font, Component.literal("Защита выбранного слота не даёт QuickSlot переставлять предмет прямо из руки"), width / 2, 20, 0xA0A0A0);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

@@ -41,8 +41,8 @@ public final class HudEditorScreen extends Screen {
 
     private void clampHudPosition() {
         QuickSlotConfig config = QuickSlotConfig.get();
-        int maxX = Math.max(0, width - ResourceHudRenderer.previewWidth(config.hudScale()));
-        int maxY = Math.max(0, height - ResourceHudRenderer.previewHeight(config.hudScale()) - 58);
+        int maxX = Math.max(0, width - ResourceHudRenderer.previewWidth(config));
+        int maxY = Math.max(0, height - ResourceHudRenderer.previewHeight(config) - 58);
         config.setHudPosition(Math.min(config.hudX(), maxX), Math.min(config.hudY(), maxY));
     }
 
@@ -52,8 +52,8 @@ public final class HudEditorScreen extends Screen {
         if (info.button() != 0) return false;
 
         QuickSlotConfig config = QuickSlotConfig.get();
-        int hudWidth = ResourceHudRenderer.previewWidth(config.hudScale());
-        int hudHeight = ResourceHudRenderer.previewHeight(config.hudScale());
+        int hudWidth = ResourceHudRenderer.previewWidth(config);
+        int hudHeight = ResourceHudRenderer.previewHeight(config);
         if (info.x() >= config.hudX() && info.x() <= config.hudX() + hudWidth
             && info.y() >= config.hudY() && info.y() <= config.hudY() + hudHeight) {
             dragging = true;
@@ -69,8 +69,8 @@ public final class HudEditorScreen extends Screen {
         if (!dragging) return super.mouseDragged(info, deltaX, deltaY);
 
         QuickSlotConfig config = QuickSlotConfig.get();
-        int hudWidth = ResourceHudRenderer.previewWidth(config.hudScale());
-        int hudHeight = ResourceHudRenderer.previewHeight(config.hudScale());
+        int hudWidth = ResourceHudRenderer.previewWidth(config);
+        int hudHeight = ResourceHudRenderer.previewHeight(config);
         int maxX = Math.max(0, width - hudWidth);
         int maxY = Math.max(0, height - hudHeight - 58);
         int x = Math.max(0, Math.min(maxX, (int) info.x() - dragOffsetX));
@@ -95,17 +95,17 @@ public final class HudEditorScreen extends Screen {
         QuickSlotConfig config = QuickSlotConfig.get();
 
         graphics.drawCenteredString(font, title, width / 2, 10, 0xFFFFFF);
-        graphics.drawCenteredString(font, Component.literal("Перетащите счётчик мышкой. Масштаб меняется кнопками снизу."), width / 2, 22, 0xA0A0A0);
+        graphics.drawCenteredString(font, Component.literal("Перетащите общий HUD мышкой. Ресурсы и статус используют одно положение."), width / 2, 22, 0xA0A0A0);
         graphics.drawCenteredString(font, Component.literal("Масштаб: " + String.format(java.util.Locale.ROOT, "%.1fx", config.hudScale())), width / 2, 34, 0xD0D0D0);
 
-        int hudWidth = ResourceHudRenderer.previewWidth(config.hudScale());
-        int hudHeight = ResourceHudRenderer.previewHeight(config.hudScale());
+        int hudWidth = ResourceHudRenderer.previewWidth(config);
+        int hudHeight = ResourceHudRenderer.previewHeight(config);
         graphics.fill(config.hudX() - 3, config.hudY() - 3, config.hudX() + hudWidth + 3, config.hudY() + hudHeight + 3, 0x66000000);
 
         if (minecraft.player != null) {
-            ResourceHudRenderer.render(graphics, minecraft.player.getInventory(), config.hudX(), config.hudY(), config.hudScale());
+            ResourceHudRenderer.render(graphics, minecraft.player.getInventory(), config);
         } else {
-            ResourceHudRenderer.render(graphics, config.hudX(), config.hudY(), config.hudScale(), 32, 8, 4, 2);
+            ResourceHudRenderer.renderPreview(graphics, config);
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
