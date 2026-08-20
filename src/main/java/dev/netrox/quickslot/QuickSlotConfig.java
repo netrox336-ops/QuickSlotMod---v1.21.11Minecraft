@@ -15,8 +15,12 @@ public final class QuickSlotConfig {
     private static final QuickSlotConfig INSTANCE = new QuickSlotConfig();
     private final Map<Profile, ItemRule[]> rules = new EnumMap<>(Profile.class);
     private boolean loaded;
-    private boolean enabled = true;
+    private boolean autoSortEnabled = true;
+    private boolean removeResourcesFromHotbar = true;
     private boolean resourceHud = true;
+    private int hudX = 6;
+    private int hudY = 6;
+    private float hudScale = 1.0F;
     private Profile profile = Profile.NORMAL;
 
     private QuickSlotConfig() {
@@ -29,9 +33,9 @@ public final class QuickSlotConfig {
     }
 
     private void resetDefaults() {
-        rules.put(Profile.NORMAL, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.BOW, ItemRule.CONSUMABLE, ItemRule.UTILITY, ItemRule.FREE, ItemRule.FREE});
-        rules.put(Profile.RUSH, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.CONSUMABLE, ItemRule.UTILITY, ItemRule.FREE, ItemRule.FREE});
-        rules.put(Profile.BRIDGE, new ItemRule[]{ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.SWORD, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.CONSUMABLE, ItemRule.UTILITY, ItemRule.FREE, ItemRule.FREE});
+        rules.put(Profile.NORMAL, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.BOW, ItemRule.GOLDEN_APPLE, ItemRule.SHEARS, ItemRule.FREE, ItemRule.FREE});
+        rules.put(Profile.RUSH, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.FIREBALL, ItemRule.ENDER_PEARL, ItemRule.FREE});
+        rules.put(Profile.BRIDGE, new ItemRule[]{ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.SWORD, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.LADDER, ItemRule.WATER, ItemRule.FREE});
     }
 
     private void ensureLoaded() {
@@ -43,13 +47,20 @@ public final class QuickSlotConfig {
         Properties properties = new Properties();
         try (InputStream input = Files.newInputStream(file)) {
             properties.load(input);
-            enabled = Boolean.parseBoolean(properties.getProperty("enabled", "true"));
+            String legacyEnabled = properties.getProperty("enabled", "true");
+            autoSortEnabled = Boolean.parseBoolean(properties.getProperty("autoSortEnabled", legacyEnabled));
+            removeResourcesFromHotbar = Boolean.parseBoolean(properties.getProperty("removeResourcesFromHotbar", "true"));
             resourceHud = Boolean.parseBoolean(properties.getProperty("resourceHud", "true"));
+            hudX = parseInt(properties.getProperty("hudX"), 6);
+            hudY = parseInt(properties.getProperty("hudY"), 6);
+            hudScale = clamp(parseFloat(properties.getProperty("hudScale"), 1.0F), 0.5F, 3.0F);
+
             try {
                 profile = Profile.valueOf(properties.getProperty("profile", Profile.NORMAL.name()));
             } catch (IllegalArgumentException ignored) {
                 profile = Profile.NORMAL;
             }
+
             for (Profile p : Profile.values()) {
                 ItemRule[] profileRules = rules.get(p);
                 for (int slot = 0; slot < 9; slot++) {
@@ -67,9 +78,14 @@ public final class QuickSlotConfig {
 
     public void save() {
         Properties properties = new Properties();
-        properties.setProperty("enabled", Boolean.toString(enabled));
+        properties.setProperty("autoSortEnabled", Boolean.toString(autoSortEnabled));
+        properties.setProperty("removeResourcesFromHotbar", Boolean.toString(removeResourcesFromHotbar));
         properties.setProperty("resourceHud", Boolean.toString(resourceHud));
+        properties.setProperty("hudX", Integer.toString(hudX));
+        properties.setProperty("hudY", Integer.toString(hudY));
+        properties.setProperty("hudScale", Float.toString(hudScale));
         properties.setProperty("profile", profile.name());
+
         for (Profile p : Profile.values()) {
             ItemRule[] profileRules = rules.get(p);
             for (int slot = 0; slot < 9; slot++) {
@@ -81,7 +97,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.0.0");
+                properties.store(output, "QuickSlot 1.1.0");
             }
         } catch (IOException ignored) {
         }
@@ -91,10 +107,40 @@ public final class QuickSlotConfig {
         return Minecraft.getInstance().gameDirectory.toPath().resolve("config").resolve("quickslot.properties");
     }
 
-    public boolean enabled() { return enabled; }
-    public void toggleEnabled() { enabled = !enabled; save(); }
+    private static int parseInt(String value, int fallback) {
+        if (value == null) return fallback;
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static float parseFloat(String value, float fallback) {
+        if (value == null) return fallback;
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException ignored) {
+            return fallback;
+        }
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    public boolean autoSortEnabled() { return autoSortEnabled; }
+    public void toggleAutoSort() { autoSortEnabled = !autoSortEnabled; save(); }
+    public boolean removeResourcesFromHotbar() { return removeResourcesFromHotbar; }
+    public void toggleRemoveResourcesFromHotbar() { removeResourcesFromHotbar = !removeResourcesFromHotbar; save(); }
     public boolean resourceHud() { return resourceHud; }
     public void toggleResourceHud() { resourceHud = !resourceHud; save(); }
+    public int hudX() { return hudX; }
+    public int hudY() { return hudY; }
+    public float hudScale() { return hudScale; }
+    public void setHudPosition(int x, int y) { hudX = Math.max(0, x); hudY = Math.max(0, y); }
+    public void setHudScale(float scale) { hudScale = clamp(scale, 0.5F, 3.0F); }
+    public void resetHud() { hudX = 6; hudY = 6; hudScale = 1.0F; save(); }
     public Profile profile() { return profile; }
     public void nextProfile() { profile = profile.next(); save(); }
     public ItemRule rule(int slot) { return rules.get(profile)[slot]; }
