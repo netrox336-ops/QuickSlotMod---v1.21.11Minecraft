@@ -1,0 +1,1 @@
+# QuickSlotMod---v1.21.11Minecraft
