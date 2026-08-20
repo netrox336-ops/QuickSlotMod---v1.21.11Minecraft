@@ -11,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Получение исходников
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Java 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -22,7 +22,7 @@ jobs:
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.1.0'
+          gradle-version: '9.6.0'
 
       - name: Сборка
         run: gradle build --stacktrace
