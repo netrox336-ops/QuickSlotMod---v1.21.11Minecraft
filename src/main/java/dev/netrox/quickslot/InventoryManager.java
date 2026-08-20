@@ -11,31 +11,46 @@ public final class InventoryManager {
 
     public static void tick(Minecraft minecraft) {
         if (minecraft.player == null || minecraft.gameMode == null || minecraft.screen != null) return;
+
         QuickSlotConfig config = QuickSlotConfig.get();
-        if (!config.enabled()) return;
+        if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar()) return;
 
         Inventory inventory = minecraft.player.getInventory();
 
-        for (int hotbar = 0; hotbar < 9; hotbar++) {
-            if (!isResource(inventory.getItem(hotbar))) continue;
-            int empty = findEmptyMainSlot(inventory);
-            if (empty >= 0) {
-                swap(minecraft, empty, hotbar);
+        if (config.removeResourcesFromHotbar()) {
+            for (int hotbar = 0; hotbar < 9; hotbar++) {
+                ItemStack stack = inventory.getItem(hotbar);
+                if (!isResource(stack) || !canMoveToMain(inventory, stack)) continue;
+                quickMove(minecraft, hotbar);
                 return;
             }
         }
 
+        if (!config.autoSortEnabled()) return;
+
         for (int target = 0; target < 9; target++) {
             ItemRule rule = config.rule(target);
-            if (rule == ItemRule.FREE || rule.matches(inventory.getItem(target))) continue;
+            ItemStack current = inventory.getItem(target);
 
-            int source = findMatchingMainSlot(inventory, rule);
+            if (rule == ItemRule.FREE) continue;
+
+            if (rule == ItemRule.EMPTY) {
+                if (current.isEmpty()) continue;
+                if (canMoveToMain(inventory, current)) {
+                    quickMove(minecraft, target);
+                    return;
+                }
+                continue;
+            }
+
+            int currentPriority = rule.matches(current) ? rule.priority(current) : -1;
+            int source = findBestMatchingMainSlot(inventory, rule, currentPriority);
             if (source >= 0) {
                 swap(minecraft, source, target);
                 return;
             }
 
-            source = findMatchingHotbarSlot(inventory, config, rule, target);
+            source = findBestMatchingHotbarSlot(inventory, config, rule, target, currentPriority);
             if (source >= 0) {
                 swap(minecraft, 36 + source, target);
                 return;
@@ -43,27 +58,57 @@ public final class InventoryManager {
         }
     }
 
-    private static int findEmptyMainSlot(Inventory inventory) {
+    private static int findBestMatchingMainSlot(Inventory inventory, ItemRule rule, int currentPriority) {
+        int bestSlot = -1;
+        int bestPriority = currentPriority;
         for (int slot = 9; slot <= 35; slot++) {
-            if (inventory.getItem(slot).isEmpty()) return slot;
+            ItemStack stack = inventory.getItem(slot);
+            int priority = rule.priority(stack);
+            if (priority > bestPriority) {
+                bestPriority = priority;
+                bestSlot = slot;
+            }
         }
-        return -1;
+        return bestSlot;
     }
 
-    private static int findMatchingMainSlot(Inventory inventory, ItemRule rule) {
-        for (int slot = 9; slot <= 35; slot++) {
-            if (rule.matches(inventory.getItem(slot))) return slot;
-        }
-        return -1;
-    }
-
-    private static int findMatchingHotbarSlot(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target) {
+    private static int findBestMatchingHotbarSlot(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority) {
+        int bestSlot = -1;
+        int bestPriority = currentPriority;
         for (int slot = 0; slot < 9; slot++) {
-            if (slot == target || !rule.matches(inventory.getItem(slot))) continue;
+            if (slot == target) continue;
+
+            ItemStack stack = inventory.getItem(slot);
+            int priority = rule.priority(stack);
+            if (priority <= bestPriority) continue;
+
             ItemRule sourceRule = config.rule(slot);
-            if (sourceRule == ItemRule.FREE || !sourceRule.matches(inventory.getItem(slot))) return slot;
+            if (sourceRule != ItemRule.FREE && sourceRule != ItemRule.EMPTY && sourceRule.matches(stack)) continue;
+
+            bestPriority = priority;
+            bestSlot = slot;
         }
-        return -1;
+        return bestSlot;
+    }
+
+    private static boolean canMoveToMain(Inventory inventory, ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        for (int slot = 9; slot <= 35; slot++) {
+            ItemStack target = inventory.getItem(slot);
+            if (target.isEmpty()) return true;
+            if (target.getItem() == stack.getItem() && target.getCount() < target.getMaxStackSize()) return true;
+        }
+        return false;
+    }
+
+    private static void quickMove(Minecraft minecraft, int hotbarSlot) {
+        minecraft.gameMode.handleInventoryMouseClick(
+            minecraft.player.inventoryMenu.containerId,
+            36 + hotbarSlot,
+            0,
+            ClickType.QUICK_MOVE,
+            minecraft.player
+        );
     }
 
     private static void swap(Minecraft minecraft, int containerSlot, int hotbarSlot) {
