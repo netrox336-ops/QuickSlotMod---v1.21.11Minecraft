@@ -12,9 +12,11 @@ public final class InventoryManager {
     private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
     private static final InventoryActionQueue ACTION_QUEUE = new InventoryActionQueue();
     private static final int MANUAL_GRACE_CYCLES = 3;
+    private static final int CURSOR_RELEASE_GRACE_CYCLES = 2;
 
     private static int manualGraceCycles;
     private static boolean wasContainerOpen;
+    private static boolean cursorWasOccupied;
     private static Profile rememberedProfile;
     private static Object rememberedPlayer;
     private static Object rememberedLevel;
@@ -37,19 +39,36 @@ public final class InventoryManager {
             return;
         }
 
-        if (minecraft.screen instanceof AbstractContainerScreen<?>) {
-            ACTION_QUEUE.clear();
-            wasContainerOpen = true;
+        boolean containerOpen = minecraft.screen instanceof AbstractContainerScreen<?>;
+        if (containerOpen) wasContainerOpen = true;
+
+        boolean cursorOccupied = !minecraft.player.containerMenu.getCarried().isEmpty();
+        if (cursorOccupied) {
+            cursorWasOccupied = true;
+            ACTION_QUEUE.cancelActions();
+            return;
+        }
+
+        if (cursorWasOccupied) {
+            cursorWasOccupied = false;
+            ACTION_QUEUE.cancelActions();
+            int grace = config.manualGrace() ? MANUAL_GRACE_CYCLES : CURSOR_RELEASE_GRACE_CYCLES;
+            manualGraceCycles = Math.max(manualGraceCycles, grace);
+        }
+
+        if (containerOpen) {
+            ACTION_QUEUE.cancelActions();
             return;
         }
         if (minecraft.screen != null) {
-            ACTION_QUEUE.clear();
+            ACTION_QUEUE.cancelActions();
             return;
         }
 
         if (wasContainerOpen) {
             wasContainerOpen = false;
-            manualGraceCycles = config.manualGrace() ? MANUAL_GRACE_CYCLES : 0;
+            ACTION_QUEUE.cancelActions();
+            manualGraceCycles = Math.max(manualGraceCycles, config.manualGrace() ? MANUAL_GRACE_CYCLES : 0);
         }
         if (manualGraceCycles > 0) {
             manualGraceCycles--;
@@ -93,6 +112,8 @@ public final class InventoryManager {
         if (changed) {
             ACTION_QUEUE.clear();
             manualGraceCycles = 0;
+            wasContainerOpen = false;
+            cursorWasOccupied = false;
             rememberedPlayer = minecraft.player;
             rememberedLevel = minecraft.level;
             rememberedContainerId = containerId;
@@ -104,6 +125,7 @@ public final class InventoryManager {
         Arrays.fill(LAST_PREFERRED_STACKS, ItemStack.EMPTY);
         manualGraceCycles = 0;
         wasContainerOpen = false;
+        cursorWasOccupied = false;
         rememberedProfile = null;
         rememberedPlayer = null;
         rememberedLevel = null;
