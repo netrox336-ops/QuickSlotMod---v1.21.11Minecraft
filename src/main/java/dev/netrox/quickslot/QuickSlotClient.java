@@ -58,10 +58,15 @@ public final class QuickSlotClient {
 
     private static void syncProfileContext(Minecraft minecraft, QuickSlotConfig config) {
         String context = profileContext(minecraft);
-        if (Objects.equals(lastProfileContext, context)) return;
+        ProfileContextStore store = ProfileContextStore.get();
+
+        if (Objects.equals(lastProfileContext, context)) {
+            store.sync(context, config);
+            return;
+        }
 
         lastProfileContext = context;
-        boolean restored = config.activateProfileContext(context);
+        boolean restored = store.sync(context, config);
         if (restored && minecraft.player != null) {
             minecraft.player.displayClientMessage(
                 net.minecraft.network.chat.Component.literal(
