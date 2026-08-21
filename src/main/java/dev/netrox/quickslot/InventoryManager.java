@@ -7,11 +7,14 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import java.util.Arrays;
+
 public final class InventoryManager {
     private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
     private static final int MANUAL_GRACE_CYCLES = 3;
     private static int manualGraceCycles;
     private static boolean wasContainerOpen;
+    private static Profile rememberedProfile;
 
     private InventoryManager() {}
 
@@ -19,6 +22,8 @@ public final class InventoryManager {
         if (minecraft.player == null || minecraft.gameMode == null) return;
 
         QuickSlotConfig config = QuickSlotConfig.get();
+        resetPreferredOnProfileChange(config);
+
         if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar() && !config.stackConsolidation()) return;
 
         if (minecraft.screen instanceof AbstractContainerScreen<?>) {
@@ -54,6 +59,12 @@ public final class InventoryManager {
         if (config.stackConsolidation()) consolidateOneStack(minecraft, inventory);
     }
 
+    private static void resetPreferredOnProfileChange(QuickSlotConfig config) {
+        if (rememberedProfile == config.profile()) return;
+        rememberedProfile = config.profile();
+        Arrays.fill(LAST_PREFERRED_STACKS, ItemStack.EMPTY);
+    }
+
     private static boolean organizeOneSlot(Minecraft minecraft, Inventory inventory, QuickSlotConfig config, int protectedSlot) {
         for (int target = 0; target < 9; target++) {
             if (target == protectedSlot) continue;
@@ -73,14 +84,25 @@ public final class InventoryManager {
             }
 
             if (rule.matches(current)) {
-                if (isUpgradeable(rule)) {
+                if (rule == ItemRule.BLOCKS && !config.preferSameBlock()) {
+                    Source preferredSource = findBestSource(inventory, config, rule, target, -1, protectedSlot);
+                    if (preferredSource != null) {
+                        ItemStack preferredBlock = sourceStack(inventory, preferredSource);
+                        if (blockRank(preferredBlock, config) < blockRank(current, config)) {
+                            swap(minecraft, preferredSource.containerSlot(), target);
+                            return true;
+                        }
+                    }
+                }
+
+                if (isUpgradeable(rule) && config.autoUpgrade(rule)) {
                     int currentPriority = rule.priority(current);
                     Source source = findBestSource(inventory, config, rule, target, currentPriority, protectedSlot);
                     if (source != null) {
                         swap(minecraft, source.containerSlot(), target);
                         return true;
                     }
-                } else if (config.isRefillEnabled(target) && shouldRefill(current, config)) {
+                } else if (!isUpgradeable(rule) && config.isRefillEnabled(target) && shouldRefill(current, config)) {
                     int mergeSource = findMergeSource(inventory, current);
                     if (mergeSource >= 0) {
                         mergeStacks(minecraft, mergeSource, 36 + target);
@@ -99,6 +121,11 @@ public final class InventoryManager {
             }
         }
         return false;
+    }
+
+    private static ItemStack sourceStack(Inventory inventory, Source source) {
+        int containerSlot = source.containerSlot();
+        return containerSlot >= 36 ? inventory.getItem(containerSlot - 36) : inventory.getItem(containerSlot);
     }
 
     private static void rememberPreferredStacks(Inventory inventory, QuickSlotConfig config) {
@@ -153,14 +180,21 @@ public final class InventoryManager {
         return rule == ItemRule.SWORD || rule == ItemRule.PICKAXE || rule == ItemRule.AXE;
     }
 
-    private static Source findBestSource(Inventory inventory, QuickSlotConfig config, ItemRule rule, int target, int currentPriority, int protectedSlot) {
+    private static Source findBestSource(
+        Inventory inventory,
+        QuickSlotConfig config,
+        ItemRule rule,
+        int target,
+        int currentPriority,
+        int protectedSlot
+    ) {
         Source best = null;
         int bestPriority = currentPriority;
         ItemStack preferred = rule == ItemRule.BLOCKS ? LAST_PREFERRED_STACKS[target] : ItemStack.EMPTY;
 
         for (int slot = 9; slot <= 35; slot++) {
             ItemStack stack = inventory.getItem(slot);
-            int priority = adjustedPriority(rule, stack, preferred);
+            int priority = adjustedPriority(config, rule, stack, preferred);
             if (priority > bestPriority) {
                 bestPriority = priority;
                 best = new Source(slot);
@@ -171,7 +205,7 @@ public final class InventoryManager {
             if (slot == target || slot == protectedSlot) continue;
 
             ItemStack stack = inventory.getItem(slot);
-            int priority = adjustedPriority(rule, stack, preferred);
+            int priority = adjustedPriority(config, rule, stack, preferred);
             if (priority <= bestPriority) continue;
 
             ItemRule sourceRule = config.rule(slot);
@@ -184,13 +218,21 @@ public final class InventoryManager {
         return best;
     }
 
-    private static int adjustedPriority(ItemRule rule, ItemStack stack, ItemStack preferred) {
+    private static int adjustedPriority(QuickSlotConfig config, ItemRule rule, ItemStack stack, ItemStack preferred) {
         int priority = rule.priority(stack);
         if (priority < 0) return priority;
-        if (rule == ItemRule.BLOCKS && !preferred.isEmpty() && ItemStack.isSameItemSameComponents(stack, preferred)) {
-            priority += 100_000;
+        if (rule != ItemRule.BLOCKS) return priority;
+
+        int rank = blockRank(stack, config);
+        int blockPriority = (BlockType.values().length - rank) * 10_000 + stack.getCount();
+        if (config.preferSameBlock() && !preferred.isEmpty() && ItemStack.isSameItemSameComponents(stack, preferred)) {
+            blockPriority += 1_000_000;
         }
-        return priority;
+        return blockPriority;
+    }
+
+    private static int blockRank(ItemStack stack, QuickSlotConfig config) {
+        return config.blockPriorityRank(BlockType.fromStack(stack));
     }
 
     private static int findMergeSource(Inventory inventory, ItemStack target) {
