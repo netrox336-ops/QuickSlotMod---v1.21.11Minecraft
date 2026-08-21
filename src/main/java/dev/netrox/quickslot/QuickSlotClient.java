@@ -11,6 +11,8 @@ import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.event.TickEvent;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.Objects;
+
 public final class QuickSlotClient {
     private static final KeyMapping OPEN_SETTINGS = new KeyMapping(
         "key.quickslot.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_O, KeyMapping.Category.MISC
@@ -19,6 +21,7 @@ public final class QuickSlotClient {
         "key.quickslot.next_profile", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_V, KeyMapping.Category.MISC
     );
     private static int tickCounter;
+    private static String lastProfileContext;
 
     private QuickSlotClient() {}
 
@@ -30,6 +33,8 @@ public final class QuickSlotClient {
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         Minecraft minecraft = Minecraft.getInstance();
         QuickSlotConfig config = QuickSlotConfig.get();
+
+        syncProfileContext(minecraft, config);
 
         while (OPEN_SETTINGS.consumeClick()) {
             minecraft.setScreen(new QuickSlotScreen(minecraft.screen));
@@ -49,6 +54,41 @@ public final class QuickSlotClient {
             tickCounter = 0;
             InventoryManager.tick(minecraft);
         }
+    }
+
+    private static void syncProfileContext(Minecraft minecraft, QuickSlotConfig config) {
+        String context = profileContext(minecraft);
+        ProfileContextStore store = ProfileContextStore.get();
+
+        if (Objects.equals(lastProfileContext, context)) {
+            store.sync(context, config);
+            return;
+        }
+
+        lastProfileContext = context;
+        boolean restored = store.sync(context, config);
+        if (restored && minecraft.player != null) {
+            minecraft.player.displayClientMessage(
+                net.minecraft.network.chat.Component.literal(
+                    "QuickSlot: восстановлен профиль " + config.profile().displayName()
+                ),
+                true
+            );
+        }
+    }
+
+    private static String profileContext(Minecraft minecraft) {
+        if (minecraft.level == null) return null;
+
+        if (minecraft.isLocalServer()) {
+            var server = minecraft.getSingleplayerServer();
+            return server == null
+                ? ProfileContextKey.singleplayer(null)
+                : ProfileContextKey.singleplayer(server.getWorldData().getLevelName());
+        }
+
+        var server = minecraft.getCurrentServer();
+        return server == null ? null : ProfileContextKey.server(server.ip);
     }
 
     public static void addHudLayer(AddGuiOverlayLayersEvent event) {
