@@ -14,6 +14,8 @@ import java.util.Properties;
 
 public final class QuickSlotConfig {
     private static final QuickSlotConfig INSTANCE = new QuickSlotConfig();
+    private static final RefillMode DEFAULT_REFILL_MODE = RefillMode.EMPTY_ONLY;
+    private static final int DEFAULT_REFILL_THRESHOLD = 16;
     private static final BlockType[] DEFAULT_BLOCK_PRIORITY = {
         BlockType.WOOL,
         BlockType.PLANKS,
@@ -26,6 +28,8 @@ public final class QuickSlotConfig {
 
     private final Map<Profile, ItemRule[]> rules = new EnumMap<>(Profile.class);
     private final Map<Profile, boolean[]> refillEnabled = new EnumMap<>(Profile.class);
+    private final Map<Profile, RefillMode[]> refillModes = new EnumMap<>(Profile.class);
+    private final Map<Profile, int[]> refillThresholds = new EnumMap<>(Profile.class);
     private final Map<Profile, BlockType[]> blockPriority = new EnumMap<>(Profile.class);
     private final Map<Profile, Boolean> preferSameBlock = new EnumMap<>(Profile.class);
 
@@ -44,8 +48,6 @@ public final class QuickSlotConfig {
     private int hudY = 6;
     private float hudScale = 1.0F;
     private Profile profile = Profile.NORMAL;
-    private RefillMode refillMode = RefillMode.EMPTY_ONLY;
-    private int refillThreshold = 16;
 
     private QuickSlotConfig() {
         resetDefaults();
@@ -57,17 +59,32 @@ public final class QuickSlotConfig {
     }
 
     private void resetDefaults() {
-        rules.put(Profile.NORMAL, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.BOW, ItemRule.GOLDEN_APPLE, ItemRule.SHEARS, ItemRule.FREE, ItemRule.FREE});
-        rules.put(Profile.RUSH, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.FIREBALL, ItemRule.ENDER_PEARL, ItemRule.FREE});
-        rules.put(Profile.BRIDGE, new ItemRule[]{ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.SWORD, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.LADDER, ItemRule.WATER, ItemRule.FREE});
-
         for (Profile p : Profile.values()) {
-            boolean[] slots = new boolean[9];
-            Arrays.fill(slots, true);
-            refillEnabled.put(p, slots);
+            rules.put(p, defaultRules(p));
+
+            boolean[] enabled = new boolean[9];
+            Arrays.fill(enabled, true);
+            refillEnabled.put(p, enabled);
+
+            RefillMode[] modes = new RefillMode[9];
+            Arrays.fill(modes, DEFAULT_REFILL_MODE);
+            refillModes.put(p, modes);
+
+            int[] thresholds = new int[9];
+            Arrays.fill(thresholds, DEFAULT_REFILL_THRESHOLD);
+            refillThresholds.put(p, thresholds);
+
             blockPriority.put(p, Arrays.copyOf(DEFAULT_BLOCK_PRIORITY, DEFAULT_BLOCK_PRIORITY.length));
             preferSameBlock.put(p, true);
         }
+    }
+
+    private ItemRule[] defaultRules(Profile p) {
+        return switch (p) {
+            case NORMAL -> new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.BOW, ItemRule.GOLDEN_APPLE, ItemRule.SHEARS, ItemRule.FREE, ItemRule.FREE};
+            case RUSH -> new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.FIREBALL, ItemRule.ENDER_PEARL, ItemRule.FREE};
+            case BRIDGE -> new ItemRule[]{ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.SWORD, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.LADDER, ItemRule.WATER, ItemRule.FREE};
+        };
     }
 
     private void ensureLoaded() {
@@ -77,6 +94,7 @@ public final class QuickSlotConfig {
         if (!Files.isRegularFile(file)) return;
 
         Properties properties = new Properties();
+        boolean refillMigrationNeeded = false;
         try (InputStream input = Files.newInputStream(file)) {
             properties.load(input);
             String legacyEnabled = properties.getProperty("enabled", "true");
@@ -93,7 +111,6 @@ public final class QuickSlotConfig {
             hudX = parseInt(properties.getProperty("hudX"), 6);
             hudY = parseInt(properties.getProperty("hudY"), 6);
             hudScale = clamp(parseFloat(properties.getProperty("hudScale"), 1.0F), 0.5F, 3.0F);
-            refillThreshold = clamp(parseInt(properties.getProperty("refillThreshold"), 16), 1, 64);
 
             try {
                 profile = Profile.valueOf(properties.getProperty("profile", Profile.NORMAL.name()));
@@ -101,15 +118,22 @@ public final class QuickSlotConfig {
                 profile = Profile.NORMAL;
             }
 
-            try {
-                refillMode = RefillMode.valueOf(properties.getProperty("refillMode", RefillMode.EMPTY_ONLY.name()));
-            } catch (IllegalArgumentException ignored) {
-                refillMode = RefillMode.EMPTY_ONLY;
-            }
+            RefillMode legacyRefillMode = parseRefillMode(
+                properties.getProperty("refillMode"),
+                DEFAULT_REFILL_MODE
+            );
+            int legacyRefillThreshold = clamp(
+                parseInt(properties.getProperty("refillThreshold"), DEFAULT_REFILL_THRESHOLD),
+                1,
+                64
+            );
 
             for (Profile p : Profile.values()) {
                 ItemRule[] profileRules = rules.get(p);
                 boolean[] profileRefill = refillEnabled.get(p);
+                RefillMode[] profileModes = refillModes.get(p);
+                int[] profileThresholds = refillThresholds.get(p);
+
                 for (int slot = 0; slot < 9; slot++) {
                     String value = properties.getProperty("profile." + p.name() + ".slot." + slot);
                     if (value != null) {
@@ -118,8 +142,22 @@ public final class QuickSlotConfig {
                         } catch (IllegalArgumentException ignored) {
                         }
                     }
+
                     profileRefill[slot] = Boolean.parseBoolean(
                         properties.getProperty("profile." + p.name() + ".refill." + slot, "true")
+                    );
+
+                    String modeKey = "profile." + p.name() + ".refillMode." + slot;
+                    String thresholdKey = "profile." + p.name() + ".refillThreshold." + slot;
+                    String modeValue = properties.getProperty(modeKey);
+                    String thresholdValue = properties.getProperty(thresholdKey);
+                    if (modeValue == null || thresholdValue == null) refillMigrationNeeded = true;
+
+                    profileModes[slot] = parseRefillMode(modeValue, legacyRefillMode);
+                    profileThresholds[slot] = clamp(
+                        parseInt(thresholdValue, legacyRefillThreshold),
+                        1,
+                        64
                     );
                 }
 
@@ -130,7 +168,10 @@ public final class QuickSlotConfig {
                 loadBlockPriority(properties, p);
             }
         } catch (IOException ignored) {
+            return;
         }
+
+        if (refillMigrationNeeded) save();
     }
 
     private void loadBlockPriority(Properties properties, Profile p) {
@@ -146,6 +187,15 @@ public final class QuickSlotConfig {
             if (used[candidate.ordinal()]) candidate = firstUnusedBlockType(used);
             order[index] = candidate;
             used[candidate.ordinal()] = true;
+        }
+    }
+
+    private static RefillMode parseRefillMode(String value, RefillMode fallback) {
+        if (value == null) return fallback;
+        try {
+            return RefillMode.valueOf(value);
+        } catch (IllegalArgumentException ignored) {
+            return fallback;
         }
     }
 
@@ -181,17 +231,22 @@ public final class QuickSlotConfig {
         properties.setProperty("hudY", Integer.toString(hudY));
         properties.setProperty("hudScale", Float.toString(hudScale));
         properties.setProperty("profile", profile.name());
-        properties.setProperty("refillMode", refillMode.name());
-        properties.setProperty("refillThreshold", Integer.toString(refillThreshold));
+
+        properties.setProperty("refillMode", refillModes.get(Profile.NORMAL)[0].name());
+        properties.setProperty("refillThreshold", Integer.toString(refillThresholds.get(Profile.NORMAL)[0]));
 
         for (Profile p : Profile.values()) {
             ItemRule[] profileRules = rules.get(p);
             boolean[] profileRefill = refillEnabled.get(p);
+            RefillMode[] profileModes = refillModes.get(p);
+            int[] profileThresholds = refillThresholds.get(p);
             BlockType[] priority = blockPriority.get(p);
 
             for (int slot = 0; slot < 9; slot++) {
                 properties.setProperty("profile." + p.name() + ".slot." + slot, profileRules[slot].name());
                 properties.setProperty("profile." + p.name() + ".refill." + slot, Boolean.toString(profileRefill[slot]));
+                properties.setProperty("profile." + p.name() + ".refillMode." + slot, profileModes[slot].name());
+                properties.setProperty("profile." + p.name() + ".refillThreshold." + slot, Integer.toString(profileThresholds[slot]));
             }
 
             properties.setProperty(
@@ -210,7 +265,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.5.0");
+                properties.store(output, "QuickSlot 1.7.0");
             }
         } catch (IOException ignored) {
         }
@@ -262,17 +317,70 @@ public final class QuickSlotConfig {
     public Profile profile() { return profile; }
     public void setProfile(Profile profile) { this.profile = profile; save(); }
     public void nextProfile() { profile = profile.next(); save(); }
-    public RefillMode refillMode() { return refillMode; }
-    public void nextRefillMode() { refillMode = refillMode.next(); save(); }
-    public int refillThreshold() { return refillThreshold; }
-    public void setRefillThreshold(int threshold) { refillThreshold = clamp(threshold, 1, 64); save(); }
-    public boolean isRefillEnabled(int slot) { return slot >= 0 && slot < 9 && refillEnabled.get(profile)[slot]; }
+
+    public boolean isRefillEnabled(int slot) {
+        return isRefillEnabled(profile, slot);
+    }
+
+    public boolean isRefillEnabled(Profile profile, int slot) {
+        return profile != null && slot >= 0 && slot < 9 && refillEnabled.get(profile)[slot];
+    }
+
     public void toggleRefillEnabled(int slot) {
         if (slot < 0 || slot >= 9) return;
         boolean[] profileRefill = refillEnabled.get(profile);
         profileRefill[slot] = !profileRefill[slot];
         save();
     }
+
+    public RefillMode refillMode(int slot) {
+        return refillMode(profile, slot);
+    }
+
+    public RefillMode refillMode(Profile profile, int slot) {
+        if (profile == null || slot < 0 || slot >= 9) return DEFAULT_REFILL_MODE;
+        return refillModes.get(profile)[slot];
+    }
+
+    public void setRefillMode(int slot, RefillMode mode) {
+        if (slot < 0 || slot >= 9 || mode == null) return;
+        refillModes.get(profile)[slot] = mode;
+        save();
+    }
+
+    public void nextRefillMode(int slot) {
+        setRefillMode(slot, refillMode(slot).next());
+    }
+
+    public int refillThreshold(int slot) {
+        return refillThreshold(profile, slot);
+    }
+
+    public int refillThreshold(Profile profile, int slot) {
+        if (profile == null || slot < 0 || slot >= 9) return DEFAULT_REFILL_THRESHOLD;
+        return refillThresholds.get(profile)[slot];
+    }
+
+    public void setRefillThreshold(int slot, int threshold) {
+        if (slot < 0 || slot >= 9) return;
+        refillThresholds.get(profile)[slot] = clamp(threshold, 1, 64);
+        save();
+    }
+
+    public RefillMode refillMode() { return refillMode(0); }
+    public int refillThreshold() { return refillThreshold(0); }
+
+    public void nextRefillMode() {
+        RefillMode next = refillMode(0).next();
+        Arrays.fill(refillModes.get(profile), next);
+        save();
+    }
+
+    public void setRefillThreshold(int threshold) {
+        Arrays.fill(refillThresholds.get(profile), clamp(threshold, 1, 64));
+        save();
+    }
+
     public boolean preferSameBlock() { return preferSameBlock.getOrDefault(profile, true); }
     public void togglePreferSameBlock() {
         preferSameBlock.put(profile, !preferSameBlock());
@@ -312,6 +420,33 @@ public final class QuickSlotConfig {
             default -> false;
         };
     }
+
+    public void copyActiveProfileTo(Profile target) {
+        copyProfile(profile, target);
+    }
+
+    public void copyProfile(Profile source, Profile target) {
+        if (source == null || target == null || source == target) return;
+        System.arraycopy(rules.get(source), 0, rules.get(target), 0, 9);
+        System.arraycopy(refillEnabled.get(source), 0, refillEnabled.get(target), 0, 9);
+        System.arraycopy(refillModes.get(source), 0, refillModes.get(target), 0, 9);
+        System.arraycopy(refillThresholds.get(source), 0, refillThresholds.get(target), 0, 9);
+        System.arraycopy(blockPriority.get(source), 0, blockPriority.get(target), 0, DEFAULT_BLOCK_PRIORITY.length);
+        preferSameBlock.put(target, preferSameBlock.getOrDefault(source, true));
+        save();
+    }
+
+    public void resetActiveProfile() {
+        ItemRule[] defaults = defaultRules(profile);
+        System.arraycopy(defaults, 0, rules.get(profile), 0, 9);
+        Arrays.fill(refillEnabled.get(profile), true);
+        Arrays.fill(refillModes.get(profile), DEFAULT_REFILL_MODE);
+        Arrays.fill(refillThresholds.get(profile), DEFAULT_REFILL_THRESHOLD);
+        System.arraycopy(DEFAULT_BLOCK_PRIORITY, 0, blockPriority.get(profile), 0, DEFAULT_BLOCK_PRIORITY.length);
+        preferSameBlock.put(profile, true);
+        save();
+    }
+
     public ItemRule rule(int slot) { return rules.get(profile)[slot]; }
     public void cycleRule(int slot) { rules.get(profile)[slot] = rule(slot).next(); save(); }
 }
