@@ -3,7 +3,6 @@ package dev.netrox.quickslot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -11,26 +10,42 @@ import java.util.Arrays;
 
 public final class InventoryManager {
     private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
+    private static final InventoryActionQueue ACTION_QUEUE = new InventoryActionQueue();
     private static final int MANUAL_GRACE_CYCLES = 3;
+
     private static int manualGraceCycles;
     private static boolean wasContainerOpen;
     private static Profile rememberedProfile;
+    private static Object rememberedPlayer;
+    private static Object rememberedLevel;
+    private static int rememberedContainerId = -1;
 
     private InventoryManager() {}
 
     public static void tick(Minecraft minecraft) {
-        if (minecraft.player == null || minecraft.gameMode == null) return;
+        if (minecraft.player == null || minecraft.gameMode == null || minecraft.level == null) {
+            resetRuntimeState();
+            return;
+        }
 
         QuickSlotConfig config = QuickSlotConfig.get();
-        resetPreferredOnProfileChange(config);
+        int containerId = minecraft.player.inventoryMenu.containerId;
+        resetOnContextChange(minecraft, config, containerId);
 
-        if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar() && !config.stackConsolidation()) return;
+        if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar() && !config.stackConsolidation()) {
+            ACTION_QUEUE.clear();
+            return;
+        }
 
         if (minecraft.screen instanceof AbstractContainerScreen<?>) {
+            ACTION_QUEUE.clear();
             wasContainerOpen = true;
             return;
         }
-        if (minecraft.screen != null) return;
+        if (minecraft.screen != null) {
+            ACTION_QUEUE.clear();
+            return;
+        }
 
         if (wasContainerOpen) {
             wasContainerOpen = false;
@@ -42,30 +57,75 @@ public final class InventoryManager {
         }
 
         Inventory inventory = minecraft.player.getInventory();
-        int protectedSlot = config.protectSelectedSlot() ? inventory.getSelectedSlot() : -1;
-        rememberPreferredStacks(inventory, config);
+        ACTION_QUEUE.tick(minecraft, inventory, containerId);
+        if (ACTION_QUEUE.isBusy()) return;
 
+        rememberPreferredStacks(inventory, config);
+        int protectedSlot = config.protectSelectedSlot() ? inventory.getSelectedSlot() : -1;
+
+        InventoryAction planned = null;
         if (config.removeResourcesFromHotbar()) {
-            for (int hotbar = 0; hotbar < 9; hotbar++) {
-                if (hotbar == protectedSlot) continue;
-                ItemStack stack = inventory.getItem(hotbar);
-                if (!isResource(stack) || !canMoveToMain(inventory, stack)) continue;
-                quickMove(minecraft, hotbar);
-                return;
-            }
+            planned = planResourceMove(inventory, containerId, protectedSlot);
+        }
+        if (planned == null && config.autoSortEnabled()) {
+            planned = planOrganizeOneSlot(inventory, config, containerId, protectedSlot);
+        }
+        if (planned == null && config.stackConsolidation()) {
+            planned = planConsolidation(inventory, containerId);
         }
 
-        if (config.autoSortEnabled() && organizeOneSlot(minecraft, inventory, config, protectedSlot)) return;
-        if (config.stackConsolidation()) consolidateOneStack(minecraft, inventory);
+        if (planned != null && ACTION_QUEUE.enqueue(planned)) {
+            ACTION_QUEUE.tick(minecraft, inventory, containerId);
+        }
     }
 
-    private static void resetPreferredOnProfileChange(QuickSlotConfig config) {
-        if (rememberedProfile == config.profile()) return;
-        rememberedProfile = config.profile();
+    private static void resetOnContextChange(Minecraft minecraft, QuickSlotConfig config, int containerId) {
+        boolean changed = rememberedPlayer != minecraft.player
+            || rememberedLevel != minecraft.level
+            || rememberedContainerId != containerId;
+
+        if (rememberedProfile != config.profile()) {
+            rememberedProfile = config.profile();
+            Arrays.fill(LAST_PREFERRED_STACKS, ItemStack.EMPTY);
+            changed = true;
+        }
+
+        if (changed) {
+            ACTION_QUEUE.clear();
+            manualGraceCycles = 0;
+            rememberedPlayer = minecraft.player;
+            rememberedLevel = minecraft.level;
+            rememberedContainerId = containerId;
+        }
+    }
+
+    private static void resetRuntimeState() {
+        ACTION_QUEUE.clear();
         Arrays.fill(LAST_PREFERRED_STACKS, ItemStack.EMPTY);
+        manualGraceCycles = 0;
+        wasContainerOpen = false;
+        rememberedProfile = null;
+        rememberedPlayer = null;
+        rememberedLevel = null;
+        rememberedContainerId = -1;
     }
 
-    private static boolean organizeOneSlot(Minecraft minecraft, Inventory inventory, QuickSlotConfig config, int protectedSlot) {
+    private static InventoryAction planResourceMove(Inventory inventory, int containerId, int protectedSlot) {
+        for (int hotbar = 0; hotbar < 9; hotbar++) {
+            if (hotbar == protectedSlot) continue;
+            ItemStack stack = inventory.getItem(hotbar);
+            if (!isResource(stack) || !canMoveToMain(inventory, stack)) continue;
+            return InventoryAction.quickMove(inventory, containerId, hotbar);
+        }
+        return null;
+    }
+
+    private static InventoryAction planOrganizeOneSlot(
+        Inventory inventory,
+        QuickSlotConfig config,
+        int containerId,
+        int protectedSlot
+    ) {
         for (int target = 0; target < 9; target++) {
             if (target == protectedSlot) continue;
 
@@ -75,10 +135,8 @@ public final class InventoryManager {
             if (rule == ItemRule.FREE) continue;
 
             if (rule == ItemRule.EMPTY) {
-                if (current.isEmpty()) continue;
-                if (canMoveToMain(inventory, current)) {
-                    quickMove(minecraft, target);
-                    return true;
+                if (!current.isEmpty() && canMoveToMain(inventory, current)) {
+                    return InventoryAction.quickMove(inventory, containerId, target);
                 }
                 continue;
             }
@@ -89,8 +147,7 @@ public final class InventoryManager {
                     if (preferredSource != null) {
                         ItemStack preferredBlock = sourceStack(inventory, preferredSource);
                         if (blockRank(preferredBlock, config) < blockRank(current, config)) {
-                            swap(minecraft, preferredSource.containerSlot(), target);
-                            return true;
+                            return InventoryAction.swap(inventory, containerId, preferredSource.containerSlot(), target);
                         }
                     }
                 }
@@ -99,14 +156,12 @@ public final class InventoryManager {
                     int currentPriority = rule.priority(current);
                     Source source = findBestSource(inventory, config, rule, target, currentPriority, protectedSlot);
                     if (source != null) {
-                        swap(minecraft, source.containerSlot(), target);
-                        return true;
+                        return InventoryAction.swap(inventory, containerId, source.containerSlot(), target);
                     }
                 } else if (!isUpgradeable(rule) && config.isRefillEnabled(target) && shouldRefill(current, config)) {
                     int mergeSource = findMergeSource(inventory, current);
                     if (mergeSource >= 0) {
-                        mergeStacks(minecraft, mergeSource, 36 + target);
-                        return true;
+                        return InventoryAction.merge(inventory, containerId, mergeSource, 36 + target);
                     }
                 }
                 continue;
@@ -116,11 +171,36 @@ public final class InventoryManager {
 
             Source source = findBestSource(inventory, config, rule, target, -1, protectedSlot);
             if (source != null) {
-                swap(minecraft, source.containerSlot(), target);
-                return true;
+                return InventoryAction.swap(inventory, containerId, source.containerSlot(), target);
             }
         }
-        return false;
+        return null;
+    }
+
+    private static InventoryAction planConsolidation(Inventory inventory, int containerId) {
+        int bestTarget = -1;
+        int bestSource = -1;
+        int bestTargetCount = -1;
+
+        for (int target = 9; target <= 35; target++) {
+            ItemStack targetStack = inventory.getItem(target);
+            if (targetStack.isEmpty() || !targetStack.isStackable() || targetStack.getCount() >= targetStack.getMaxStackSize()) continue;
+
+            for (int source = 9; source <= 35; source++) {
+                if (source == target) continue;
+                ItemStack sourceStack = inventory.getItem(source);
+                if (sourceStack.isEmpty() || !ItemStack.isSameItemSameComponents(sourceStack, targetStack)) continue;
+
+                if (targetStack.getCount() > bestTargetCount) {
+                    bestTargetCount = targetStack.getCount();
+                    bestTarget = target;
+                    bestSource = source;
+                }
+            }
+        }
+
+        if (bestTarget < 0 || bestSource < 0) return null;
+        return InventoryAction.merge(inventory, containerId, bestSource, bestTarget);
     }
 
     private static ItemStack sourceStack(Inventory inventory, Source source) {
@@ -147,33 +227,6 @@ public final class InventoryManager {
             case BELOW_THRESHOLD -> current.getCount() < Math.min(config.refillThreshold(), current.getMaxStackSize());
             case ALWAYS_MAX -> true;
         };
-    }
-
-    private static boolean consolidateOneStack(Minecraft minecraft, Inventory inventory) {
-        int bestTarget = -1;
-        int bestSource = -1;
-        int bestTargetCount = -1;
-
-        for (int target = 9; target <= 35; target++) {
-            ItemStack targetStack = inventory.getItem(target);
-            if (targetStack.isEmpty() || !targetStack.isStackable() || targetStack.getCount() >= targetStack.getMaxStackSize()) continue;
-
-            for (int source = 9; source <= 35; source++) {
-                if (source == target) continue;
-                ItemStack sourceStack = inventory.getItem(source);
-                if (sourceStack.isEmpty() || !ItemStack.isSameItemSameComponents(sourceStack, targetStack)) continue;
-
-                if (targetStack.getCount() > bestTargetCount) {
-                    bestTargetCount = targetStack.getCount();
-                    bestTarget = target;
-                    bestSource = source;
-                }
-            }
-        }
-
-        if (bestTarget < 0 || bestSource < 0) return false;
-        mergeStacks(minecraft, bestSource, bestTarget);
-        return true;
     }
 
     private static boolean isUpgradeable(ItemRule rule) {
@@ -257,33 +310,6 @@ public final class InventoryManager {
             if (ItemStack.isSameItemSameComponents(target, stack) && target.getCount() < target.getMaxStackSize()) return true;
         }
         return false;
-    }
-
-    private static void quickMove(Minecraft minecraft, int hotbarSlot) {
-        minecraft.gameMode.handleInventoryMouseClick(
-            minecraft.player.inventoryMenu.containerId,
-            36 + hotbarSlot,
-            0,
-            ClickType.QUICK_MOVE,
-            minecraft.player
-        );
-    }
-
-    private static void swap(Minecraft minecraft, int containerSlot, int hotbarSlot) {
-        minecraft.gameMode.handleInventoryMouseClick(
-            minecraft.player.inventoryMenu.containerId,
-            containerSlot,
-            hotbarSlot,
-            ClickType.SWAP,
-            minecraft.player
-        );
-    }
-
-    private static void mergeStacks(Minecraft minecraft, int sourceSlot, int targetSlot) {
-        int containerId = minecraft.player.inventoryMenu.containerId;
-        minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
-        minecraft.gameMode.handleInventoryMouseClick(containerId, targetSlot, 0, ClickType.PICKUP, minecraft.player);
-        minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
     }
 
     public static boolean isResource(ItemStack stack) {
