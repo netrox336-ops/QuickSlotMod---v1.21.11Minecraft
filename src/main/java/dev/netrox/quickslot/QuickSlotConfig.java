@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Properties;
@@ -14,10 +15,13 @@ import java.util.Properties;
 public final class QuickSlotConfig {
     private static final QuickSlotConfig INSTANCE = new QuickSlotConfig();
     private final Map<Profile, ItemRule[]> rules = new EnumMap<>(Profile.class);
+    private final Map<Profile, boolean[]> refillEnabled = new EnumMap<>(Profile.class);
     private boolean loaded;
     private boolean autoSortEnabled = true;
     private boolean removeResourcesFromHotbar = true;
     private boolean protectSelectedSlot = true;
+    private boolean stackConsolidation = false;
+    private boolean manualGrace = true;
     private boolean resourceHud = true;
     private boolean statusHud = true;
     private int hudX = 6;
@@ -40,6 +44,12 @@ public final class QuickSlotConfig {
         rules.put(Profile.NORMAL, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.BOW, ItemRule.GOLDEN_APPLE, ItemRule.SHEARS, ItemRule.FREE, ItemRule.FREE});
         rules.put(Profile.RUSH, new ItemRule[]{ItemRule.SWORD, ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.FIREBALL, ItemRule.ENDER_PEARL, ItemRule.FREE});
         rules.put(Profile.BRIDGE, new ItemRule[]{ItemRule.BLOCKS, ItemRule.BLOCKS, ItemRule.SWORD, ItemRule.PICKAXE, ItemRule.AXE, ItemRule.GOLDEN_APPLE, ItemRule.LADDER, ItemRule.WATER, ItemRule.FREE});
+
+        for (Profile p : Profile.values()) {
+            boolean[] slots = new boolean[9];
+            Arrays.fill(slots, true);
+            refillEnabled.put(p, slots);
+        }
     }
 
     private void ensureLoaded() {
@@ -55,6 +65,8 @@ public final class QuickSlotConfig {
             autoSortEnabled = Boolean.parseBoolean(properties.getProperty("autoSortEnabled", legacyEnabled));
             removeResourcesFromHotbar = Boolean.parseBoolean(properties.getProperty("removeResourcesFromHotbar", "true"));
             protectSelectedSlot = Boolean.parseBoolean(properties.getProperty("protectSelectedSlot", "true"));
+            stackConsolidation = Boolean.parseBoolean(properties.getProperty("stackConsolidation", "false"));
+            manualGrace = Boolean.parseBoolean(properties.getProperty("manualGrace", "true"));
             resourceHud = Boolean.parseBoolean(properties.getProperty("resourceHud", "true"));
             statusHud = Boolean.parseBoolean(properties.getProperty("statusHud", "true"));
             hudX = parseInt(properties.getProperty("hudX"), 6);
@@ -76,13 +88,18 @@ public final class QuickSlotConfig {
 
             for (Profile p : Profile.values()) {
                 ItemRule[] profileRules = rules.get(p);
+                boolean[] profileRefill = refillEnabled.get(p);
                 for (int slot = 0; slot < 9; slot++) {
                     String value = properties.getProperty("profile." + p.name() + ".slot." + slot);
-                    if (value == null) continue;
-                    try {
-                        profileRules[slot] = ItemRule.valueOf(value);
-                    } catch (IllegalArgumentException ignored) {
+                    if (value != null) {
+                        try {
+                            profileRules[slot] = ItemRule.valueOf(value);
+                        } catch (IllegalArgumentException ignored) {
+                        }
                     }
+                    profileRefill[slot] = Boolean.parseBoolean(
+                        properties.getProperty("profile." + p.name() + ".refill." + slot, "true")
+                    );
                 }
             }
         } catch (IOException ignored) {
@@ -94,6 +111,8 @@ public final class QuickSlotConfig {
         properties.setProperty("autoSortEnabled", Boolean.toString(autoSortEnabled));
         properties.setProperty("removeResourcesFromHotbar", Boolean.toString(removeResourcesFromHotbar));
         properties.setProperty("protectSelectedSlot", Boolean.toString(protectSelectedSlot));
+        properties.setProperty("stackConsolidation", Boolean.toString(stackConsolidation));
+        properties.setProperty("manualGrace", Boolean.toString(manualGrace));
         properties.setProperty("resourceHud", Boolean.toString(resourceHud));
         properties.setProperty("statusHud", Boolean.toString(statusHud));
         properties.setProperty("hudX", Integer.toString(hudX));
@@ -105,8 +124,10 @@ public final class QuickSlotConfig {
 
         for (Profile p : Profile.values()) {
             ItemRule[] profileRules = rules.get(p);
+            boolean[] profileRefill = refillEnabled.get(p);
             for (int slot = 0; slot < 9; slot++) {
                 properties.setProperty("profile." + p.name() + ".slot." + slot, profileRules[slot].name());
+                properties.setProperty("profile." + p.name() + ".refill." + slot, Boolean.toString(profileRefill[slot]));
             }
         }
 
@@ -114,7 +135,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.3.0");
+                properties.store(output, "QuickSlot 1.4.0");
             }
         } catch (IOException ignored) {
         }
@@ -143,6 +164,10 @@ public final class QuickSlotConfig {
     public void toggleRemoveResourcesFromHotbar() { removeResourcesFromHotbar = !removeResourcesFromHotbar; save(); }
     public boolean protectSelectedSlot() { return protectSelectedSlot; }
     public void toggleProtectSelectedSlot() { protectSelectedSlot = !protectSelectedSlot; save(); }
+    public boolean stackConsolidation() { return stackConsolidation; }
+    public void toggleStackConsolidation() { stackConsolidation = !stackConsolidation; save(); }
+    public boolean manualGrace() { return manualGrace; }
+    public void toggleManualGrace() { manualGrace = !manualGrace; save(); }
     public boolean resourceHud() { return resourceHud; }
     public void toggleResourceHud() { resourceHud = !resourceHud; save(); }
     public boolean statusHud() { return statusHud; }
@@ -160,6 +185,13 @@ public final class QuickSlotConfig {
     public void nextRefillMode() { refillMode = refillMode.next(); save(); }
     public int refillThreshold() { return refillThreshold; }
     public void setRefillThreshold(int threshold) { refillThreshold = clamp(threshold, 1, 64); save(); }
+    public boolean isRefillEnabled(int slot) { return slot >= 0 && slot < 9 && refillEnabled.get(profile)[slot]; }
+    public void toggleRefillEnabled(int slot) {
+        if (slot < 0 || slot >= 9) return;
+        boolean[] profileRefill = refillEnabled.get(profile);
+        profileRefill[slot] = !profileRefill[slot];
+        save();
+    }
     public ItemRule rule(int slot) { return rules.get(profile)[slot]; }
     public void cycleRule(int slot) { rules.get(profile)[slot] = rule(slot).next(); save(); }
 }

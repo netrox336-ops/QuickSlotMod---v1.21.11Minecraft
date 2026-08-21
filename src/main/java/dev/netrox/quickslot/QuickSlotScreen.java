@@ -67,12 +67,17 @@ public final class QuickSlotScreen extends Screen {
         addRenderableWidget(Button.builder(
             Component.literal("Профиль: " + config.profile().displayName()),
             button -> minecraft.setScreen(new ProfileScreen(this))
-        ).bounds(center - 154, top + 56, 150, 20).build());
+        ).bounds(center - 154, top + 56, 98, 20).build());
 
         addRenderableWidget(Button.builder(
-            Component.literal("Auto Refill: " + config.refillMode().displayName()),
+            Component.literal("Auto Refill"),
             button -> minecraft.setScreen(new RefillSettingsScreen(this))
-        ).bounds(center + 4, top + 56, 150, 20).build());
+        ).bounds(center - 50, top + 56, 100, 20).build());
+
+        addRenderableWidget(Button.builder(
+            Component.literal("Инвентарь"),
+            button -> minecraft.setScreen(new InventorySettingsScreen(this))
+        ).bounds(center + 56, top + 56, 98, 20).build());
 
         int gridTop = top + 90;
         for (int slot = 0; slot < 9; slot++) {
@@ -104,7 +109,7 @@ public final class QuickSlotScreen extends Screen {
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.drawCenteredString(font, title, width / 2, 8, 0xFFFFFF);
-        graphics.drawCenteredString(font, Component.literal("Защита выбранного слота не даёт QuickSlot переставлять предмет прямо из руки"), width / 2, 20, 0xA0A0A0);
+        graphics.drawCenteredString(font, Component.literal("Инвентарь — объединение стеков и пауза после ручной работы"), width / 2, 20, 0xA0A0A0);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 
