@@ -158,7 +158,7 @@ public final class InventoryManager {
                     if (source != null) {
                         return InventoryAction.swap(inventory, containerId, source.containerSlot(), target);
                     }
-                } else if (!isUpgradeable(rule) && config.isRefillEnabled(target) && shouldRefill(current, config)) {
+                } else if (!isUpgradeable(rule) && config.isRefillEnabled(target) && shouldRefill(current, config, target)) {
                     int mergeSource = findMergeSource(inventory, current);
                     if (mergeSource >= 0) {
                         return InventoryAction.merge(inventory, containerId, mergeSource, 36 + target);
@@ -220,11 +220,11 @@ public final class InventoryManager {
         }
     }
 
-    private static boolean shouldRefill(ItemStack current, QuickSlotConfig config) {
+    private static boolean shouldRefill(ItemStack current, QuickSlotConfig config, int hotbarSlot) {
         if (current.isEmpty() || !current.isStackable() || current.getCount() >= current.getMaxStackSize()) return false;
-        return switch (config.refillMode()) {
+        return switch (config.refillMode(hotbarSlot)) {
             case EMPTY_ONLY -> false;
-            case BELOW_THRESHOLD -> current.getCount() < Math.min(config.refillThreshold(), current.getMaxStackSize());
+            case BELOW_THRESHOLD -> current.getCount() < Math.min(config.refillThreshold(hotbarSlot), current.getMaxStackSize());
             case ALWAYS_MAX -> true;
         };
     }
