@@ -1,6 +1,7 @@
 package dev.netrox.quickslot;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
@@ -8,14 +9,32 @@ import net.minecraft.world.item.Items;
 
 public final class InventoryManager {
     private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
+    private static final int MANUAL_GRACE_CYCLES = 3;
+    private static int manualGraceCycles;
+    private static boolean wasContainerOpen;
 
     private InventoryManager() {}
 
     public static void tick(Minecraft minecraft) {
-        if (minecraft.player == null || minecraft.gameMode == null || minecraft.screen != null) return;
+        if (minecraft.player == null || minecraft.gameMode == null) return;
 
         QuickSlotConfig config = QuickSlotConfig.get();
-        if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar()) return;
+        if (!config.autoSortEnabled() && !config.removeResourcesFromHotbar() && !config.stackConsolidation()) return;
+
+        if (minecraft.screen instanceof AbstractContainerScreen<?>) {
+            wasContainerOpen = true;
+            return;
+        }
+        if (minecraft.screen != null) return;
+
+        if (wasContainerOpen) {
+            wasContainerOpen = false;
+            manualGraceCycles = config.manualGrace() ? MANUAL_GRACE_CYCLES : 0;
+        }
+        if (manualGraceCycles > 0) {
+            manualGraceCycles--;
+            return;
+        }
 
         Inventory inventory = minecraft.player.getInventory();
         int protectedSlot = config.protectSelectedSlot() ? inventory.getSelectedSlot() : -1;
@@ -31,8 +50,11 @@ public final class InventoryManager {
             }
         }
 
-        if (!config.autoSortEnabled()) return;
+        if (config.autoSortEnabled() && organizeOneSlot(minecraft, inventory, config, protectedSlot)) return;
+        if (config.stackConsolidation()) consolidateOneStack(minecraft, inventory);
+    }
 
+    private static boolean organizeOneSlot(Minecraft minecraft, Inventory inventory, QuickSlotConfig config, int protectedSlot) {
         for (int target = 0; target < 9; target++) {
             if (target == protectedSlot) continue;
 
@@ -45,7 +67,7 @@ public final class InventoryManager {
                 if (current.isEmpty()) continue;
                 if (canMoveToMain(inventory, current)) {
                     quickMove(minecraft, target);
-                    return;
+                    return true;
                 }
                 continue;
             }
@@ -56,24 +78,27 @@ public final class InventoryManager {
                     Source source = findBestSource(inventory, config, rule, target, currentPriority, protectedSlot);
                     if (source != null) {
                         swap(minecraft, source.containerSlot(), target);
-                        return;
+                        return true;
                     }
-                } else if (shouldRefill(current, config)) {
+                } else if (config.isRefillEnabled(target) && shouldRefill(current, config)) {
                     int mergeSource = findMergeSource(inventory, current);
                     if (mergeSource >= 0) {
-                        mergeIntoHotbar(minecraft, mergeSource, target);
-                        return;
+                        mergeStacks(minecraft, mergeSource, 36 + target);
+                        return true;
                     }
                 }
                 continue;
             }
 
+            if (current.isEmpty() && !config.isRefillEnabled(target)) continue;
+
             Source source = findBestSource(inventory, config, rule, target, -1, protectedSlot);
             if (source != null) {
                 swap(minecraft, source.containerSlot(), target);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     private static void rememberPreferredStacks(Inventory inventory, QuickSlotConfig config) {
@@ -95,6 +120,33 @@ public final class InventoryManager {
             case BELOW_THRESHOLD -> current.getCount() < Math.min(config.refillThreshold(), current.getMaxStackSize());
             case ALWAYS_MAX -> true;
         };
+    }
+
+    private static boolean consolidateOneStack(Minecraft minecraft, Inventory inventory) {
+        int bestTarget = -1;
+        int bestSource = -1;
+        int bestTargetCount = -1;
+
+        for (int target = 9; target <= 35; target++) {
+            ItemStack targetStack = inventory.getItem(target);
+            if (targetStack.isEmpty() || !targetStack.isStackable() || targetStack.getCount() >= targetStack.getMaxStackSize()) continue;
+
+            for (int source = 9; source <= 35; source++) {
+                if (source == target) continue;
+                ItemStack sourceStack = inventory.getItem(source);
+                if (sourceStack.isEmpty() || !ItemStack.isSameItemSameComponents(sourceStack, targetStack)) continue;
+
+                if (targetStack.getCount() > bestTargetCount) {
+                    bestTargetCount = targetStack.getCount();
+                    bestTarget = target;
+                    bestSource = source;
+                }
+            }
+        }
+
+        if (bestTarget < 0 || bestSource < 0) return false;
+        mergeStacks(minecraft, bestSource, bestTarget);
+        return true;
     }
 
     private static boolean isUpgradeable(ItemRule rule) {
@@ -185,9 +237,8 @@ public final class InventoryManager {
         );
     }
 
-    private static void mergeIntoHotbar(Minecraft minecraft, int sourceSlot, int hotbarSlot) {
+    private static void mergeStacks(Minecraft minecraft, int sourceSlot, int targetSlot) {
         int containerId = minecraft.player.inventoryMenu.containerId;
-        int targetSlot = 36 + hotbarSlot;
         minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
         minecraft.gameMode.handleInventoryMouseClick(containerId, targetSlot, 0, ClickType.PICKUP, minecraft.player);
         minecraft.gameMode.handleInventoryMouseClick(containerId, sourceSlot, 0, ClickType.PICKUP, minecraft.player);
