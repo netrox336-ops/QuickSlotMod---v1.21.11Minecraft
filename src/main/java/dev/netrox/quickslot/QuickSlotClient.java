@@ -22,6 +22,7 @@ public final class QuickSlotClient {
     );
     private static int tickCounter;
     private static String lastProfileContext;
+    private static boolean disabledAfterFailure;
 
     private QuickSlotClient() {}
 
@@ -31,7 +32,17 @@ public final class QuickSlotClient {
     }
 
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
+        if (disabledAfterFailure) return;
+
         Minecraft minecraft = Minecraft.getInstance();
+        try {
+            onClientTickSafe(minecraft);
+        } catch (RuntimeException | LinkageError error) {
+            disableAfterFailure(minecraft, "client tick", error);
+        }
+    }
+
+    private static void onClientTickSafe(Minecraft minecraft) {
         QuickSlotConfig config = QuickSlotConfig.get();
 
         syncProfileContext(minecraft, config);
@@ -99,11 +110,35 @@ public final class QuickSlotClient {
     }
 
     private static void renderHud(GuiGraphics graphics, DeltaTracker tracker) {
-        Minecraft minecraft = Minecraft.getInstance();
-        QuickSlotConfig config = QuickSlotConfig.get();
-        if (minecraft.player == null || minecraft.options.hideGui) return;
-        if (!config.resourceHud() && !config.statusHud()) return;
+        if (disabledAfterFailure) return;
 
-        ResourceHudRenderer.render(graphics, minecraft.player.getInventory(), config);
+        Minecraft minecraft = Minecraft.getInstance();
+        try {
+            QuickSlotConfig config = QuickSlotConfig.get();
+            if (minecraft.player == null || minecraft.options.hideGui) return;
+            if (!config.resourceHud() && !config.statusHud()) return;
+
+            ResourceHudRenderer.render(graphics, minecraft.player.getInventory(), config);
+        } catch (RuntimeException | LinkageError error) {
+            disableAfterFailure(minecraft, "HUD render", error);
+        }
+    }
+
+    private static void disableAfterFailure(Minecraft minecraft, String phase, Throwable error) {
+        if (disabledAfterFailure) return;
+        disabledAfterFailure = true;
+        tickCounter = 0;
+
+        System.err.println("[QuickSlot] Internal error during " + phase + ". QuickSlot is disabled for this session to protect the client from crashing.");
+        error.printStackTrace(System.err);
+
+        if (minecraft.player != null) {
+            minecraft.player.displayClientMessage(
+                net.minecraft.network.chat.Component.literal(
+                    "QuickSlot отключён до перезапуска из-за внутренней ошибки. Подробности в latest.log."
+                ),
+                false
+            );
+        }
     }
 }

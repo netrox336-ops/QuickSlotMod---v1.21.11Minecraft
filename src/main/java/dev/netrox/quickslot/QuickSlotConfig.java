@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.Properties;
 
 public final class QuickSlotConfig {
-    private static final QuickSlotConfig INSTANCE = new QuickSlotConfig();
     private static final RefillMode DEFAULT_REFILL_MODE = RefillMode.EMPTY_ONLY;
     private static final int DEFAULT_REFILL_THRESHOLD = 16;
     private static final BlockType[] DEFAULT_BLOCK_PRIORITY = {
@@ -25,6 +24,7 @@ public final class QuickSlotConfig {
         BlockType.OBSIDIAN,
         BlockType.OTHER
     };
+    private static final QuickSlotConfig INSTANCE = new QuickSlotConfig();
 
     private final Map<Profile, ItemRule[]> rules = new EnumMap<>(Profile.class);
     private final Map<Profile, boolean[]> refillEnabled = new EnumMap<>(Profile.class);
@@ -265,7 +265,7 @@ public final class QuickSlotConfig {
         try {
             Files.createDirectories(file.getParent());
             try (OutputStream output = Files.newOutputStream(file)) {
-                properties.store(output, "QuickSlot 1.7.0");
+                properties.store(output, "QuickSlot 1.9.1");
             }
         } catch (IOException ignored) {
         }
@@ -315,7 +315,11 @@ public final class QuickSlotConfig {
     public void setHudScale(float scale) { hudScale = clamp(scale, 0.5F, 3.0F); }
     public void resetHud() { hudX = 6; hudY = 6; hudScale = 1.0F; save(); }
     public Profile profile() { return profile; }
-    public void setProfile(Profile profile) { this.profile = profile; save(); }
+    public void setProfile(Profile profile) {
+        if (profile == null) return;
+        this.profile = profile;
+        save();
+    }
     public void nextProfile() { profile = profile.next(); save(); }
 
     public boolean isRefillEnabled(int slot) {
@@ -388,11 +392,12 @@ public final class QuickSlotConfig {
     }
     public BlockType blockPriority(int index) {
         BlockType[] order = blockPriority.get(profile);
-        if (index < 0 || index >= order.length) return BlockType.OTHER;
+        if (order == null || index < 0 || index >= order.length) return BlockType.OTHER;
         return order[index];
     }
     public int blockPriorityRank(BlockType type) {
         BlockType[] order = blockPriority.get(profile);
+        if (order == null || type == null) return BlockType.values().length;
         for (int index = 0; index < order.length; index++) {
             if (order[index] == type) return index;
         }
@@ -400,6 +405,7 @@ public final class QuickSlotConfig {
     }
     public void moveBlockPriority(int index, int direction) {
         BlockType[] order = blockPriority.get(profile);
+        if (order == null) return;
         int target = index + direction;
         if (index < 0 || index >= order.length || target < 0 || target >= order.length) return;
         BlockType current = order[index];
@@ -413,6 +419,7 @@ public final class QuickSlotConfig {
         save();
     }
     public boolean autoUpgrade(ItemRule rule) {
+        if (rule == null) return false;
         return switch (rule) {
             case SWORD -> autoUpgradeSword;
             case PICKAXE -> autoUpgradePickaxe;
