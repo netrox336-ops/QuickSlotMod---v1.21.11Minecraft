@@ -9,7 +9,7 @@ import net.minecraft.world.item.Items;
 import java.util.Arrays;
 
 public final class InventoryManager {
-    private static final ItemStack[] LAST_PREFERRED_STACKS = new ItemStack[9];
+    private static final ItemStack[] LAST_PREFERRED_STACKS = createPreferredStackCache();
     private static final InventoryActionQueue ACTION_QUEUE = new InventoryActionQueue();
     private static final int MANUAL_GRACE_CYCLES = 3;
     private static final int CURSOR_RELEASE_GRACE_CYCLES = 2;
@@ -23,6 +23,12 @@ public final class InventoryManager {
     private static int rememberedContainerId = -1;
 
     private InventoryManager() {}
+
+    private static ItemStack[] createPreferredStackCache() {
+        ItemStack[] stacks = new ItemStack[9];
+        Arrays.fill(stacks, ItemStack.EMPTY);
+        return stacks;
+    }
 
     public static void tick(Minecraft minecraft) {
         if (minecraft.player == null || minecraft.gameMode == null || minecraft.level == null) {
@@ -300,7 +306,10 @@ public final class InventoryManager {
 
         int rank = blockRank(stack, config);
         int blockPriority = (BlockType.values().length - rank) * 10_000 + stack.getCount();
-        if (config.preferSameBlock() && !preferred.isEmpty() && ItemStack.isSameItemSameComponents(stack, preferred)) {
+        if (config.preferSameBlock()
+            && preferred != null
+            && !preferred.isEmpty()
+            && ItemStack.isSameItemSameComponents(stack, preferred)) {
             blockPriority += 1_000_000;
         }
         return blockPriority;
